@@ -1,5 +1,7 @@
 from django.db import models
-from decimal import Decimal 
+from decimal import Decimal
+from django.utils import timezone
+from django.contrib.auth import get_user_model
 
 # 设备可用状态枚举（匹配你的下拉选项）
 DEVICE_STATUS = (
@@ -31,3 +33,87 @@ class Device(models.Model):
 
     def __str__(self):
         return f"{self.device_code} - {self.model}"
+
+    def save(self, *args, **kwargs):
+        """重写save方法，自动记录设备操作"""
+        from ledger.models import DeviceLedger
+
+        is_new = self.pk is None
+        old_status = None
+
+        if not is_new:
+            try:
+                old_device = Device.objects.get(pk=self.pk)
+                old_status = old_device.status
+            except Device.DoesNotExist:
+                pass
+
+        # 调用父类save方法
+        super().save(*args, **kwargs)
+
+        # 获取当前用户（如果有的话）
+        User = get_user_model()
+        current_user = None
+        try:
+            # 这里可以根据实际情况获取当前操作用户
+            # 暂时使用系统用户或第一个管理员用户
+            current_user = User.objects.filter(is_staff=True).first()
+        except:
+            pass
+
+        # 记录操作到台账
+        if is_new:
+            # 新增设备
+            DeviceLedger.objects.create(
+                device=self,
+                device_name=self.model,
+                operation_type='other',
+                operation_date=timezone.now(),
+                status_after_operation=self.status,
+                description=f'新增设备：{self.device_code} - {self.model}',
+                operator=current_user
+            )
+        elif old_status and old_status != self.status:
+            # 状态变更
+            if self.status == 'available' and old_status == 'unavailable':
+                # 设备归还（状态从不可用变为可用）
+                # 这个逻辑在devices/views.py中已经处理，这里不再重复
+                pass
+            else:
+                # 其他状态变更
+                DeviceLedger.objects.create(
+                    device=self,
+                    device_name=self.model,
+                    operation_type='other',
+                    operation_date=timezone.now(),
+                    status_after_operation=self.status,
+                    description=f'设备状态变更：{old_status} → {self.status}',
+                    operator=current_user
+                )
+
+    def delete(self, *args, **kwargs):
+        """重写delete方法，记录设备删除操作"""
+        from ledger.models import DeviceLedger
+
+        # 获取当前用户
+        User = get_user_model()
+        current_user = None
+        try:
+            current_user = User.objects.filter(is_staff=True).first()
+        except:
+            pass
+
+        # 先记录删除操作，再删除设备
+        DeviceLedger.objects.create(
+            device=self,
+            device_name=self.model,
+            operation_type='discard',
+            operation_date=timezone.now(),
+            status_after_operation='discarded',
+            description=f'删除设备：{self.device_code} - {self.model}',
+            operator=current_user,
+            user=None  # 删除操作没有特定用户
+        )
+
+        # 调用父类delete方法
+        super().delete(*args, **kwargs)

@@ -26,7 +26,15 @@ SECRET_KEY = "django-insecure-=_jewn_^t+sz#zm9qs@yhf6*$y6ru^abr$0+9cqoe7#*t@*a1h
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+
+# Custom error handlers
+# 当DEBUG=False时，这些处理器会显示自定义的错误页面
+# 当DEBUG=True时，Django会显示详细的调试信息
+HANDLER400 = 'jnu_lab_system.views.bad_request'
+HANDLER403 = 'jnu_lab_system.views.permission_denied'
+HANDLER404 = 'jnu_lab_system.views.page_not_found'
+HANDLER500 = 'jnu_lab_system.views.server_error'
 
 
 # Application definition
@@ -43,6 +51,7 @@ INSTALLED_APPS = [
     'devices',
     'user',
     'booking',
+    'ledger',
     'manager',
     'labadmin',
 ]

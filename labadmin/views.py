@@ -15,6 +15,14 @@ from django.contrib import messages
 from booking.models import Booking, ApprovalRecord
 from user.models import UserInfo
 from devices.models import Device
+from ledger.models import DeviceLedger
+from .models import Report
+from django.utils import timezone
+from datetime import timedelta, datetime, date
+from django.db.models import Count, Sum, Q, Avg
+from django.http import JsonResponse, HttpResponse
+import json
+from decimal import Decimal
 
 
 def admin_home(request):
@@ -55,8 +63,220 @@ def booking_apply(request):
 def my_booking(request):
     return render(request, 'user/my_booking.html')
 
+def generate_report_data(report_type, start_date, end_date):
+    """生成报表数据"""
+    # 获取时间范围内的预约数据
+    bookings = Booking.objects.filter(
+        booking_date__gte=start_date,
+        booking_date__lte=end_date
+    )
+    
+    # 获取已审批通过的预约
+    approved_bookings = bookings.filter(status='manager_approved')
+    
+    # 基础统计
+    total_bookings = bookings.count()
+    approved_count = approved_bookings.count()
+    rejected_count = bookings.filter(Q(status='admin_rejected') | Q(status='manager_rejected')).count()
+    pending_count = bookings.filter(status='pending').count()
+    
+    # 按设备统计
+    device_stats = approved_bookings.values('device__device_code', 'device__model').annotate(
+        booking_count=Count('id'),
+        revenue=Sum('device__price_external')
+    ).order_by('-booking_count')
+    
+    # 按用户类型统计
+    user_type_stats = approved_bookings.values('applicant__user_type').annotate(
+        booking_count=Count('id'),
+        user_count=Count('applicant', distinct=True)
+    )
+    
+    # 按日期统计（用于图表）
+    date_stats = approved_bookings.values('booking_date').annotate(
+        booking_count=Count('id')
+    ).order_by('booking_date')
+    
+    # 计算总收入（仅校外人员）
+    total_revenue = approved_bookings.filter(
+        applicant__user_type='external'
+    ).aggregate(
+        total=Sum('device__price_external')
+    )['total'] or Decimal('0')
+    
+    # 设备使用率统计
+    device_usage = []
+    for device in Device.objects.all():
+        device_bookings = approved_bookings.filter(device=device)
+        booking_count = device_bookings.count()
+        # 假设每个预约使用2小时
+        usage_hours = booking_count * 2
+        # 计算使用率（假设每天可用8小时）
+        days = (end_date - start_date).days + 1
+        total_hours = days * 8
+        usage_rate = (usage_hours / total_hours * 100) if total_hours > 0 else 0
+        
+        device_usage.append({
+            'device_code': device.device_code,
+            'device_model': device.model,
+            'booking_count': booking_count,
+            'usage_hours': usage_hours,
+            'usage_rate': round(usage_rate, 2),
+            'revenue': float(device_bookings.filter(applicant__user_type='external').aggregate(
+                total=Sum('device__price_external')
+            )['total'] or Decimal('0'))
+        })
+    
+    # 构建报表数据
+    report_data = {
+        'summary': {
+            'total_bookings': total_bookings,
+            'approved_count': approved_count,
+            'rejected_count': rejected_count,
+            'pending_count': pending_count,
+            'total_devices': Device.objects.count(),
+            'total_users': UserInfo.objects.filter(booking__in=approved_bookings).distinct().count(),
+            'total_revenue': float(total_revenue),
+        },
+        'device_stats': list(device_stats),
+        'user_type_stats': list(user_type_stats),
+        'date_stats': list(date_stats),
+        'device_usage': device_usage,
+    }
+    
+    return report_data
+
+@login_required
 def report_stat(request):
-    return render(request, 'admin/report_stat.html')
+    """报表统计页面"""
+    # 获取已生成的报表列表
+    reports = Report.objects.all().order_by('-generated_at')[:20]
+    
+    # 获取筛选条件
+    report_type_filter = request.GET.get('report_type', '')
+    date_filter = request.GET.get('date', '')
+    
+    if report_type_filter:
+        reports = reports.filter(report_type=report_type_filter)
+    
+    # 处理报表生成请求
+    if request.method == 'POST' and 'generate' in request.POST:
+        report_type = request.POST.get('report_type')
+        date_input = request.POST.get('date_input')
+        start_date_input = request.POST.get('start_date', '').strip()
+        end_date_input = request.POST.get('end_date', '').strip()
+        
+        # 自定义时间段报表需要起始日期和结束日期
+        if report_type == 'custom':
+            if not start_date_input or not end_date_input:
+                messages.error(request, '自定义时间段报表需要填写起始日期和结束日期！')
+                return redirect('report_stat')
+        elif not date_input:
+            messages.error(request, '请选择报表类型和日期！')
+            return redirect('report_stat')
+        
+        try:
+            # 解析日期
+            if report_type == 'week':
+                # 周报表：输入日期所在周的周一和周日
+                input_date = datetime.strptime(date_input, '%Y-%m-%d').date()
+                start_date = input_date - timedelta(days=input_date.weekday())
+                end_date = start_date + timedelta(days=6)
+                report_name = f"{start_date.strftime('%Y年%m月%d日')} 至 {end_date.strftime('%Y年%m月%d日')} 周报表"
+            elif report_type == 'month':
+                # 月报表：输入日期所在月的第一天和最后一天
+                # 处理 YYYY-MM 格式
+                if len(date_input) == 7 and date_input.count('-') == 1:
+                    year, month = map(int, date_input.split('-'))
+                else:
+                    # 尝试解析为日期
+                    input_date = datetime.strptime(date_input, '%Y-%m-%d').date()
+                    year, month = input_date.year, input_date.month
+                start_date = date(year, month, 1)
+                if month == 12:
+                    end_date = date(year + 1, 1, 1) - timedelta(days=1)
+                else:
+                    end_date = date(year, month + 1, 1) - timedelta(days=1)
+                report_name = f"{year}年{month:02d}月报表"
+            elif report_type == 'year':
+                # 年报表：输入日期所在年的1月1日和12月31日
+                year = int(date_input)
+                start_date = date(year, 1, 1)
+                end_date = date(year, 12, 31)
+                report_name = f"{year}年报表"
+            elif report_type == 'custom':
+                # 自定义时间段报表：使用用户指定的起始日期和结束日期
+                start_date = datetime.strptime(start_date_input, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date_input, '%Y-%m-%d').date()
+                
+                # 验证日期范围
+                if start_date > end_date:
+                    messages.error(request, '起始日期不能晚于结束日期！')
+                    return redirect('report_stat')
+                
+                report_name = f"{start_date.strftime('%Y年%m月%d日')} 至 {end_date.strftime('%Y年%m月%d日')} 自定义报表"
+            else:
+                messages.error(request, '无效的报表类型！')
+                return redirect('report_stat')
+            
+            # 检查是否已存在相同报表（只检查相同类型的，自定义报表可以重复生成）
+            if report_type != 'custom':
+                existing_report = Report.objects.filter(
+                    report_type=report_type,
+                    start_date=start_date,
+                    end_date=end_date
+                ).first()
+                
+                if existing_report:
+                    if existing_report.generated_by:
+                        messages.info(request, f'该时间段报表已存在（手动生成），已为您加载：{existing_report.report_name}')
+                    else:
+                        messages.info(request, f'该时间段报表已存在（系统自动生成），已为您加载：{existing_report.report_name}')
+                    return redirect(f'report_stat?view={existing_report.id}')
+            
+            # 生成报表数据
+            report_data = generate_report_data(report_type, start_date, end_date)
+            
+            # 创建报表记录
+            report = Report.objects.create(
+                report_type=report_type,
+                report_name=report_name,
+                start_date=start_date,
+                end_date=end_date,
+                report_data=report_data,
+                total_bookings=report_data['summary']['total_bookings'],
+                total_devices=report_data['summary']['total_devices'],
+                total_users=report_data['summary']['total_users'],
+                total_revenue=Decimal(str(report_data['summary']['total_revenue'])),
+                generated_by=request.user
+            )
+            
+            messages.success(request, f'报表生成成功：{report_name}')
+            return redirect(f'report_stat?view={report.id}')
+            
+        except ValueError as e:
+            messages.error(request, f'日期格式错误：请检查日期格式是否正确！')
+            return redirect('report_stat')
+        except Exception as e:
+            messages.error(request, f'生成报表失败：{str(e)}')
+            return redirect('report_stat')
+    
+    # 查看报表详情
+    report_id = request.GET.get('view')
+    current_report = None
+    if report_id:
+        try:
+            current_report = Report.objects.get(id=report_id)
+        except Report.DoesNotExist:
+            messages.error(request, '报表不存在！')
+    
+    context = {
+        'reports': reports,
+        'current_report': current_report,
+        'report_type_filter': report_type_filter,
+        'date_filter': date_filter,
+    }
+    return render(request, 'admin/report_stat.html', context)
 
 # 1. 管理员审批页面
 @login_required
@@ -133,6 +353,8 @@ def handle_approval(request, booking_id, action):
             # 学生/教师：直接审批通过
             if booking.applicant.user_type in ['student', 'teacher']:
                 booking.status = 'manager_approved'
+                # 审批通过时创建借出台账记录
+                create_borrow_ledger(booking, request.user)
             # 校外人员：需负责人审批
             else:
                 booking.status = 'admin_approved'
@@ -145,6 +367,8 @@ def handle_approval(request, booking_id, action):
     elif is_manager:
         if action == 'approve':
             booking.status = 'manager_approved'
+            # 审批通过时创建借出台账记录
+            create_borrow_ledger(booking, request.user)
         else:
             booking.status = 'manager_rejected'
         approval_level = 'manager'
@@ -164,3 +388,31 @@ def handle_approval(request, booking_id, action):
     # 提示信息
     action_text = '批准' if action == 'approve' else '拒绝'
     messages.success(request, f'已{action_text}预约申请：{booking.booking_code}')
+
+def create_borrow_ledger(booking, operator):
+    """审批通过时创建借出台账记录"""
+    try:
+        # 计算预期归还时间（基于预约日期，假设借用2小时）
+        expected_return_date = booking.booking_date  # 可以根据实际需求调整
+        
+        # 创建借出台账记录
+        DeviceLedger.objects.create(
+            device=booking.device,
+            device_name=booking.device.model,
+            user=booking.applicant,
+            operation_type='borrow',
+            operation_date=timezone.now(),
+            expected_return_date=expected_return_date,
+            status_after_operation='unavailable',
+            description=f'预约编号：{booking.booking_code}，用途：{booking.purpose or "无"}',
+            operator=operator
+        )
+        
+        # 更新设备状态为不可用
+        booking.device.status = 'unavailable'
+        booking.device.save()
+        
+        print(f'已为预约 {booking.booking_code} 创建借出台账记录')
+        
+    except Exception as e:
+        print(f'创建台账记录失败：{str(e)}')

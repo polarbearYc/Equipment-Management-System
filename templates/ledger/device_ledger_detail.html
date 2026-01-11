@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+
+{% block title %}设备台账详情{% endblock %}
+
+{% block sidebar %}
+<div class="sidebar">
+    <a href="{% url 'admin_home' %}">首页</a>
+    <a href="{% url 'booking_approve' %}">预约审批</a>
+    <a href="{% url 'device_manage' %}">设备管理</a>
+    <a href="{% url 'ledger:ledger_home' %}">台账</a>
+    <a href="{% url 'report_stat' %}">报表统计</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4 px-5">
+    <div class="row">
+        <div class="col-12">
+            <h2 class="mb-4">设备台账详情</h2>
+
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">台账记录 #{{ ledger.pk }}</h4>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row">
+                        <div class="col-lg-6 col-md-12 mb-4">
+                            <div class="card h-100 border-info">
+                                <div class="card-header bg-info text-white">
+                                    <h5 class="mb-0">📋 设备信息</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p class="mb-3"><strong class="text-primary">设备编号：</strong>
+                                        {% if ledger.device %}
+                                            <span class="badge bg-secondary">{{ ledger.device.device_code }}</span>
+                                        {% elif ledger.operation_type == 'discard' and ledger.description %}
+                                            {% load ledger_tags %}
+                                            <span class="badge bg-secondary">{{ ledger.description|extract_device_code }}</span>
+                                        {% else %}
+                                            <span class="text-muted">{{ ledger.device_name }}</span>
+                                        {% endif %}
+                                    </p>
+                                    <p class="mb-3"><strong class="text-primary">设备名称：</strong>{{ ledger.device_name }}</p>
+                                    {% if ledger.device %}
+                                    <p class="mb-3"><strong class="text-primary">生产厂商：</strong>{{ ledger.device.manufacturer|default:"-" }}</p>
+                                    {% endif %}
+                                    <p class="mb-3"><strong class="text-primary">操作后状态：</strong>
+                                        <span class="badge 
+                                            {% if ledger.status_after_operation == 'available' %}bg-success
+                                            {% elif ledger.status_after_operation == 'unavailable' %}bg-danger
+                                            {% elif ledger.status_after_operation == 'maintenance' %}bg-warning
+                                            {% else %}bg-secondary{% endif %}">
+                                            {{ ledger.get_status_after_operation_display }}
+                                        </span>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-6 col-md-12 mb-4">
+                            <div class="card h-100 border-success">
+                                <div class="card-header bg-success text-white">
+                                    <h5 class="mb-0">👤 操作信息</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p class="mb-3"><strong class="text-primary">借用人：</strong>
+                                        {% if ledger.user %}
+                                            <span class="badge bg-info">{{ ledger.user.name }}</span> 
+                                            <small class="text-muted">({{ ledger.user.user_code }})</small>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </p>
+                                    <p class="mb-3"><strong class="text-primary">操作类型：</strong>
+                                        <span class="badge 
+                                            {% if ledger.operation_type == 'borrow' %}bg-primary
+                                            {% elif ledger.operation_type == 'return' %}bg-success
+                                            {% elif ledger.operation_type == 'discard' %}bg-danger
+                                            {% else %}bg-secondary{% endif %}">
+                                            {{ ledger.get_operation_type_display }}
+                                        </span>
+                                    </p>
+                                    <p class="mb-3"><strong class="text-primary">操作日期：</strong>{{ ledger.operation_date|date:"Y-m-d H:i:s" }}</p>
+                                    <p class="mb-3"><strong class="text-primary">预期归还时间：</strong>
+                                        {% if ledger.expected_return_date %}
+                                            {{ ledger.expected_return_date|date:"Y-m-d H:i:s" }}
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </p>
+                                    <p class="mb-3"><strong class="text-primary">实际归还时间：</strong>
+                                        {% if ledger.actual_return_date %}
+                                            {{ ledger.actual_return_date|date:"Y-m-d H:i:s" }}
+                                        {% else %}
+                                            <span class="text-muted">未归还</span>
+                                        {% endif %}
+                                    </p>
+                                    <p class="mb-3"><strong class="text-primary">操作员：</strong>{{ ledger.operator.username|default:"系统" }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if ledger.description %}
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <div class="card border-warning">
+                                <div class="card-header bg-warning text-dark">
+                                    <h5 class="mb-0">📝 操作描述</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p class="mb-0">{{ ledger.description }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <div class="card border-secondary">
+                                <div class="card-header bg-secondary text-white">
+                                    <h5 class="mb-0">🕒 系统信息</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p class="mb-0"><strong class="text-primary">记录创建时间：</strong>{{ ledger.created_at|date:"Y-m-d H:i:s" }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer text-end">
+                    <a href="{% url 'ledger:device_ledger_list' %}" class="btn btn-secondary btn-lg">
+                        <i class="fas fa-arrow-left"></i> 返回列表
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
