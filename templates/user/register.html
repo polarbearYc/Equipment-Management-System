@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+
+{% block title %}用户注册 - 江南大学实验室设备管理系统{% endblock %}
+
+{% block content %}
+<div class="card" style="width: 500px; margin: 30px auto;">
+    <h2 style="text-align: center; margin-bottom: 20px;">用户注册</h2>
+    
+    <!-- 错误提示 -->
+    {% if form.errors or messages %}
+    <div style="margin-bottom: 15px;">
+        {% for field, errors in form.errors.items %}
+            {% for error in errors %}
+            <div class="alert alert-danger" style="padding: 10px; margin-bottom: 5px;">
+                {{ error }}
+            </div>
+            {% endfor %}
+        {% endfor %}
+        
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }}" style="padding: 10px; margin-bottom: 5px;">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <form method="post">
+        {% csrf_token %}
+        
+        <div class="form-group">
+            <label>{{ form.user_code.label }}</label>
+            {{ form.user_code }}
+            <small style="color: #666;">{{ form.user_code.help_text|default:"学生填学号，教师填工号，校外人员填自定义编号" }}</small>
+        </div>
+        
+        <div class="form-group">
+            <label>{{ form.password.label }}</label>
+            {{ form.password }}
+        </div>
+        
+        <div class="form-group">
+            <label>{{ form.confirm_password.label }}</label>
+            {{ form.confirm_password }}
+        </div>
+        
+        <div class="form-group">
+            <label>{{ form.name.label }}</label>
+            {{ form.name }}
+        </div>
+        
+        <div class="form-group">
+            <label>{{ form.gender.label }}</label>
+            {{ form.gender }}
+        </div>
+        
+        <div class="form-group">
+            <label>{{ form.user_type.label }}</label>
+            {{ form.user_type }}
+            <small style="color: #666;">注册后用户类型不可修改</small>
+        </div>
+        
+        <div class="form-group">
+            <label>{{ form.department.label }}</label>
+            {{ form.department }}
+            <small style="color: #666;">例如：计算机科学与工程学院</small>
+        </div>
+        
+        <div class="form-group">
+            <label>{{ form.phone.label }}</label>
+            {{ form.phone }}
+        </div>
+        
+        <div style="margin: 20px 0;">
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 10px;">立即注册</button>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px;">
+            <p>已有账号？<a href="{% url 'user_login' %}">立即登录</a></p>
+        </div>
+    </form>
+</div>
+
+<style>
+.form-group {
+    margin-bottom: 15px;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+.form-group input, .form-group select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+.alert {
+    border-radius: 4px;
+}
+</style>
+{% endblock %}
