@@ -1,42 +1,37 @@
 from django.shortcuts import render, redirect, get_object_or_404
-
 from django.db.models import Q
-from user.models import UserInfo
-from user.forms import UserInfoForm
-from django.contrib.auth.hashers import make_password  # 密码加密
-from django.contrib.auth import update_session_auth_hash  # 保持登录状态
-
-# 以下是创建角色组和初始用户的代码
-from django.contrib.auth.models import User, Group, Permission
-
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.hashers import make_password
+from django.contrib.auth import update_session_auth_hash
+from django.contrib.auth.models import User, Group
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 
-from booking.models import Booking, ApprovalRecord
+# 导入业务模型
 from user.models import UserInfo
 from devices.models import Device
+from booking.models import Booking, ApprovalRecord
+# 导入所有表单
+from .forms import UserInfoForm, RegistrationForm, StudentForm, StudentIdForm
 
-
+# ---------------------- 基础用户视图 ----------------------
 
 @login_required
 def user_profile(request):
     """个人信息管理视图"""
-    # 获取当前登录用户关联的UserInfo
     try:
         user_info = UserInfo.objects.get(auth_user=request.user)
     except UserInfo.DoesNotExist:
         messages.error(request, '未找到你的个人信息，请联系管理员！')
         return redirect('user_home')
     
-    # 教师用户：获取指导的学生列表（需提前建立指导关系，此处示例为按advisor字段匹配）
+    # 教师用户：获取指导的学生列表（整合他人精确匹配逻辑）
     advisor_students = []
     if user_info.user_type == 'teacher':
         advisor_students = UserInfo.objects.filter(
             user_type='student', 
-            advisor__contains=user_info.name
+            advisor__icontains=user_info.name  
         )
     
-    # 处理表单提交
     if request.method == 'POST':
         # 更新基础信息
         user_info.name = request.POST.get('name')
@@ -44,7 +39,7 @@ def user_profile(request):
         user_info.department = request.POST.get('department')
         user_info.phone = request.POST.get('phone')
         
-        # 更新不同用户类型的专属字段
+        # 更新专属字段
         if user_info.user_type == 'student':
             user_info.major = request.POST.get('major')
             user_info.advisor = request.POST.get('advisor')
@@ -59,101 +54,72 @@ def user_profile(request):
         messages.success(request, '个人信息修改成功！')
         return redirect('user_profile')
     
-    # GET请求：渲染页面
     context = {
         'user_info': user_info,
         'advisor_students': advisor_students
     }
     return render(request, 'user/user_profile.html', context)
 
-# 新增：修改密码视图（简单版）
 @login_required
 def change_password(request):
-    """修改密码视图（完整版）"""
-    # 如果是POST请求（提交改密表单）
+    """修改密码视图"""
     if request.method == 'POST':
         old_password = request.POST.get('old_password', '').strip()
         new_password = request.POST.get('new_password', '').strip()
         confirm_password = request.POST.get('confirm_password', '').strip()
         
-        # 1. 空值校验
         if not old_password or not new_password or not confirm_password:
             messages.error(request, '请填写所有密码字段！')
             return render(request, 'user/change_password.html')
         
-        # 2. 验证原密码是否正确
         if not request.user.check_password(old_password):
             messages.error(request, '原密码输入错误，请重新输入！')
             return render(request, 'user/change_password.html')
         
-        # 3. 验证新密码长度
-        # if len(new_password) < 6:
-        #     messages.error(request, '新密码长度不能少于6位！')
-        #     return render(request, 'user/change_password.html')
-        
-        # 4. 验证两次新密码是否一致
         if new_password != confirm_password:
             messages.error(request, '两次输入的新密码不一致！')
             return render(request, 'user/change_password.html')
         
-        # 5. 验证新密码是否和原密码相同
         if new_password == old_password:
             messages.error(request, '新密码不能和原密码相同！')
             return render(request, 'user/change_password.html')
         
-        # 6. 所有校验通过，更新密码
         request.user.set_password(new_password)
         request.user.save()
-        
-        # 关键：保持用户登录状态（否则改密后会自动登出）
         update_session_auth_hash(request, request.user)
-        
         messages.success(request, '密码修改成功！')
-        return redirect('user_profile')  # 改密成功后返回个人信息页
+        return redirect('user_profile')
     
-    # GET请求：显示改密页面
     return render(request, 'user/change_password.html')
 
-
-# ---------------------- 普通用户视图 ----------------------
 def user_home(request):
     return render(request, 'user/home.html')
 
 def device_list(request):
-    """
-    用户端设备查询视图
-    对应路径：/user/device/list/
-    """
-    # 1. 处理搜索逻辑
+    """用户端设备查询视图"""
     keyword = request.GET.get('keyword', '')
-    # 基础查询：获取所有设备（按编号排序）
     devices = Device.objects.all().order_by('device_code')
-    
-    # 如果有搜索关键词，过滤结果
     if keyword:
         devices = devices.filter(
-            Q(device_code__icontains=keyword) |  # 按设备编号搜索
-            Q(model__icontains=keyword) |        # 按型号搜索
-            Q(manufacturer__icontains=keyword) | # 按厂商搜索
-            Q(purpose__icontains=keyword)        # 按实验用途搜索
+            Q(device_code__icontains=keyword) | 
+            Q(model__icontains=keyword) |
+            Q(manufacturer__icontains=keyword) |
+            Q(purpose__icontains=keyword)
         )
+    return render(request, 'user/device_list.html', {'devices': devices, 'keyword': keyword})
 
-    # 2. 准备上下文数据
-    context = {
-        'devices': devices,
-        'keyword': keyword,  # 回显搜索关键词
-    }
-    return render(request, 'user/device_list.html', context)
+# ---------------------- 您的核心功能：教师审批 ----------------------
+
+@login_required
 def teacher_approve(request):
-    """指导教师审批视图"""
+    """指导教师审批视图（保留您的核心逻辑）"""
     user_info = get_object_or_404(UserInfo, auth_user=request.user)
     
-    # 安全校验：确保只有教师能进入
     if user_info.user_type != 'teacher':
         messages.error(request, '只有教师账号可以访问审批页面！')
         return redirect('user_home')
 
-    # 获取分配给该教师审批的预约（通过 teacher_id 匹配）
+    # 获取分配给该教师审批的预约
     bookings = Booking.objects.filter(
         status='teacher_pending',
         teacher_id=user_info.user_code
@@ -161,7 +127,7 @@ def teacher_approve(request):
 
     if request.method == 'POST':
         booking_id = request.POST.get('booking_id')
-        action = request.POST.get('action') # 'approve' 或 'reject'
+        action = request.POST.get('action') 
         booking = get_object_or_404(Booking, id=booking_id)
 
         if action == 'approve':
@@ -186,3 +152,131 @@ def teacher_approve(request):
         return redirect('teacher_approve')
 
     return render(request, 'user/teacher_approve.html', {'bookings': bookings})
+
+# ---------------------- 他人新增功能：注册与学生管理 ----------------------
+
+def register_view(request):
+    """用户注册视图"""
+    if request.method == 'POST':
+        form = RegistrationForm(request.POST)
+        if form.is_valid():
+            user_code = form.cleaned_data['user_code']
+            password = form.cleaned_data['password']
+            name = form.cleaned_data['name']
+            
+            try:
+                # 1. 创建登录账号
+                user = User.objects.create_user(
+                    username=user_code,
+                    password=password,
+                    first_name=name,
+                    is_active=True
+                )
+                # 2. 创建扩展信息
+                user_info = form.save(commit=False)
+                user_info.auth_user = user
+                user_info.save()
+                
+                messages.success(request, f'注册成功！请使用编号 {user_code} 登录')
+                return redirect('user_login')
+            except Exception as e:
+                messages.error(request, f'注册失败：{str(e)}')
+    else:
+        form = RegistrationForm()
+    return render(request, 'user/register.html', {'form': form})
+
+def teacher_required(function=None):
+    """教师权限检查装饰器"""
+    actual_decorator = user_passes_test(
+        lambda u: hasattr(u, 'userinfo') and u.userinfo.user_type == 'teacher',
+        login_url='user_profile',
+        redirect_field_name=None
+    )
+    if function: return actual_decorator(function)
+    return actual_decorator
+
+@login_required
+@teacher_required
+def add_student(request):
+    """教师添加学生 - 第一步：查验学号"""
+    teacher_info = UserInfo.objects.get(auth_user=request.user)
+    if request.method == 'POST':
+        form = StudentIdForm(request.POST)
+        if form.is_valid():
+            user_code = form.cleaned_data['user_code']
+            try:
+                existing_student = UserInfo.objects.get(user_code=user_code)
+                if existing_student.user_type == 'student':
+                    existing_student.advisor = teacher_info.name
+                    existing_student.save()
+                    messages.success(request, f'学生 {existing_student.name} 已存在，成功添加关联！')
+                    return redirect('user_profile')
+                else:
+                    messages.error(request, f'编号 {user_code} 不是学生类型！')
+            except UserInfo.DoesNotExist:
+                request.session['adding_student_code'] = user_code
+                return redirect('add_student_full')
+    else:
+        form = StudentIdForm()
+    return render(request, 'user/add_student_step1.html', {'form': form, 'teacher_info': teacher_info})
+
+@login_required
+@teacher_required
+def add_student_full(request):
+    """教师添加学生 - 第二步：完整注册"""
+    teacher_info = UserInfo.objects.get(auth_user=request.user)
+    user_code = request.session.get('adding_student_code')
+    if not user_code: return redirect('add_student')
+    
+    if request.method == 'POST':
+        form = StudentForm(request.POST, teacher_name=teacher_info.name)
+        if form.is_valid():
+            try:
+                user = User.objects.create_user(
+                    username=user_code, password=user_code,
+                    first_name=form.cleaned_data['name'], is_active=True
+                )
+                student = form.save(commit=False)
+                student.user_code, student.auth_user, student.user_type = user_code, user, 'student'
+                student.save()
+                del request.session['adding_student_code']
+                messages.success(request, f'已注册并关联学生 {student.name}！')
+                return redirect('user_profile')
+            except Exception as e:
+                messages.error(request, f'添加失败：{str(e)}')
+    else:
+        form = StudentForm(teacher_name=teacher_info.name)
+        form.fields['user_code'].initial = user_code
+    return render(request, 'user/add_student_step2.html', {'form': form, 'user_code': user_code})
+
+@login_required
+@teacher_required
+def edit_student(request, student_id):
+    """教师编辑学生信息"""
+    teacher_info = UserInfo.objects.get(auth_user=request.user)
+    student = get_object_or_404(UserInfo, id=student_id, advisor=teacher_info.name)
+    
+    if request.method == 'POST':
+        form = StudentForm(request.POST, instance=student, teacher_name=teacher_info.name)
+        if form.is_valid():
+            form.save()
+            if student.auth_user:
+                student.auth_user.first_name = form.cleaned_data['name']
+                student.auth_user.save()
+            messages.success(request, '学生信息更新成功！')
+            return redirect('user_profile')
+    else:
+        form = StudentForm(instance=student, teacher_name=teacher_info.name)
+    return render(request, 'user/student_form.html', {'form': form, 'student': student})
+
+@login_required
+@teacher_required
+def remove_student(request, student_id):
+    """教师解绑指导学生"""
+    teacher_info = UserInfo.objects.get(auth_user=request.user)
+    student = get_object_or_404(UserInfo, id=student_id, advisor=teacher_info.name)
+    if request.method == 'POST':
+        student.advisor = ''
+        student.save()
+        messages.success(request, f'已移除学生 {student.name} 的指导关系')
+    return redirect('user_profile')

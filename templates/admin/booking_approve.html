@@ -7,6 +7,7 @@
     <a href="{% url 'admin_home' %}">首页</a> 
     <a href="{% url 'booking_approve' %}" class="active">预约审批</a>
     <a href="{% url 'device_manage' %}">设备管理</a>
+    <a href="{% url 'ledger:ledger_home' %}">台账</a>
     <a href="{% url 'report_stat' %}">报表统计</a>
 </div>
 {% endblock %}
@@ -51,6 +52,8 @@
                     <th style="padding: 8px; border: 1px solid #dee2e6;">用户类型</th>
                     <th style="padding: 8px; border: 1px solid #dee2e6;">设备编号</th>
                     <th style="padding: 8px; border: 1px solid #dee2e6;">预约时段</th>
+                    <th style="padding: 8px; border: 1px solid #dee2e6;">设备状态</th>
+                    <th style="padding: 8px; border: 1px solid #dee2e6;">当前状态</th>
                     <th style="padding: 8px; border: 1px solid #dee2e6;">审批备注</th> 
                     <th style="padding: 8px; border: 1px solid #dee2e6;">审批操作</th>
                 </tr>
@@ -69,11 +72,14 @@
                     <td style="padding: 8px; border: 1px solid #dee2e6;">{{ booking.device.device_code }}</td>
                     <td style="padding: 8px; border: 1px solid #dee2e6;">{{ booking.booking_date }} {{ booking.time_slot }}</td>
                     
+                    <td style="padding: 8px; border: 1px solid #dee2e6;">{{ booking.device.get_status_display }}</td>
+                    <td style="padding: 8px; border: 1px solid #dee2e6;">{{ booking.get_status_display }}</td>
+
                     <td style="padding: 8px; border: 1px solid #dee2e6;">
                         <input type="text" name="comment_{{ booking.booking_code }}" placeholder="输入意见" style="width: 100%; padding: 4px;">
                     </td>
 
-                    <td style="padding: 8px; border: 1px solid #dee2e6;">
+                    <td style="padding: 8px; border: 1px solid #dee2e6; white-space: nowrap;">
                         {% if is_admin %}
                             <button type="submit" name="approve" value="{{ booking.id }}" class="btn btn-success btn-sm">批准</button>
                             <button type="submit" name="reject" value="{{ booking.id }}" class="btn btn-danger btn-sm">拒绝</button>
@@ -85,7 +91,7 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8" style="padding: 8px; border: 1px solid #dee2e6; text-align: center;">暂无待审批的申请</td>
+                    <td colspan="10" style="padding: 8px; border: 1px solid #dee2e6; text-align: center;">暂无待审批的申请</td>
                 </tr>
                 {% endfor %}
             </tbody>

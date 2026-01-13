@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - 江南大学实验室设备管理系统{% endblock %}
+
+
+
+{% block content %}
+<div class="card">
+    <h2>{{ title }}</h2>
+    
+    <!-- 错误/成功提示 -->
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}" style="padding: 10px; margin: 15px 0; border-radius: 4px;">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+    
+    <!-- 表单错误提示 -->
+    {% if form.errors %}
+        <div class="alert alert-danger" style="padding: 10px; margin: 15px 0; border-radius: 4px;">
+            {% for field, errors in form.errors.items %}
+                {% for error in errors %}
+                    <p>{{ error }}</p>
+                {% endfor %}
+            {% endfor %}
+        </div>
+    {% endif %}
+    
+    <form method="post">
+        {% csrf_token %}
+        
+        <div style="display: flex; gap: 40px; flex-wrap: wrap; margin-bottom: 20px;">
+            <div style="flex: 1; min-width: 300px;">
+                <div class="form-group">
+                    <label>{{ form.user_code.label }}</label>
+                    {{ form.user_code }}
+                    <small style="color: #666;">学生的学号，将作为登录用户名</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>{{ form.name.label }}</label>
+                    {{ form.name }}
+                </div>
+                
+                <div class="form-group">
+                    <label>{{ form.gender.label }}</label>
+                    {{ form.gender }}
+                </div>
+                
+                <div class="form-group">
+                    <label>{{ form.advisor.label }}</label>
+                    {{ form.advisor }}
+                    <small style="color: #666;">自动填充为当前教师姓名</small>
+                </div>
+            </div>
+            
+            <div style="flex: 1; min-width: 300px;">
+                <div class="form-group">
+                    <label>{{ form.department.label }}</label>
+                    {{ form.department }}
+                </div>
+                
+                <div class="form-group">
+                    <label>{{ form.major.label }}</label>
+                    {{ form.major }}
+                </div>
+                
+                <div class="form-group">
+                    <label>{{ form.phone.label }}</label>
+                    {{ form.phone }}
+                </div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <button type="submit" class="btn btn-primary" style="padding: 8px 20px;">
+                {% if title == '添加学生' %}添加学生{% else %}保存修改{% endif %}
+            </button>
+            <a href="{% url 'user_profile' %}" class="btn btn-secondary" style="padding: 8px 20px; margin-left: 10px;">取消</a>
+        </div>
+    </form>
+</div>
+
+<style>
+.form-group {
+    margin-bottom: 15px;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+.form-group input, .form-group select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+.alert {
+    border-radius: 4px;
+}
+.alert-success {
+    background-color: #d4edda;
+    color: #155724;
+}
+.alert-danger {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+</style>
+{% endblock %}

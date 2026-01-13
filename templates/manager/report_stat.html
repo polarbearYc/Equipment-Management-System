@@ -7,71 +7,170 @@
     <a href="{% url 'manager_home' %}">首页</a>
     <a href="{% url 'manager_booking_approve' %}">校外人员预约审批</a>
     <a href="{% url 'user_manage' %}">用户管理</a>
-    <a href="{% url 'manager_report_stat' %}">报表统计</a>
+    <a href="{% url 'ledger:ledger_home' %}">台账</a>
+    <a href="{% url 'manager_report_stat' %}" class="active">报表统计</a>
 </div>
 {% endblock %}
 
 {% block content %}
 <div class="card">
     <h2>实验室负责人 - 设备使用报表统计</h2>
-    <!-- 以下内容可复用admin/report_stat.html的内容，或调整成负责人视角的报表 -->
-    <div style="margin-bottom: 20px;">
-        <label>报表类型：</label>
-        <select name="report_type" onchange="changeReportType(this.value)">
-            <option value="week">周报表</option>
-            <option value="month">月报表</option>
-            <option value="year">年报表</option>
-        </select>
-        <label style="margin-left: 20px;">统计时间：</label>
-        <input type="month" name="stat_time" value="2025-12">
-        <button class="btn">生成报表</button>
-        <button class="btn btn-success">导出报表</button>
-        <button class="btn">打印报表</button>
+    
+    <div style="margin-bottom: 20px; padding: 15px; background-color: #e7f3ff; border-left: 4px solid #3498db; border-radius: 4px;">
+        <h4 style="margin-top: 0; color: #2980b9;">📅 报表系统说明</h4>
+        <p style="margin: 5px 0; color: #555; line-height: 1.6;">
+            • <strong>系统会自动生成报表</strong>：
+              <span style="margin-left: 20px;">- 周报表：每周一凌晨2点生成上一周报表</span><br>
+              <span style="margin-left: 20px;">- 月报表：每月1号凌晨2点生成上一月报表</span><br>
+              <span style="margin-left: 20px;">- 年报表：每年1月1号凌晨2点生成上一年报表</span><br>
+            • <strong>报表自动清理</strong>：超过30天的报表会被自动清理<br>
+            • <strong>手动生成</strong>：您可以根据负责人权限手动补发指定时间段的报表
+        </p>
+    </div>
+    
+    <div style="margin-bottom: 30px; padding: 20px; background-color: #f5f5f5; border-radius: 5px;">
+        <h3 style="margin-bottom: 15px;">🔧 手动生成报表</h3>
+        <form method="post" id="report_form">
+            {% csrf_token %}
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                <div>
+                    <label style="display: block; margin-bottom: 5px;">报表类型：</label>
+                    <select name="report_type" class="form-control" required style="width: 100%;" id="report_type_select">
+                        <option value="week">周报表</option>
+                        <option value="month">月报表</option>
+                        <option value="year">年报表</option>
+                        <option value="custom">自定义时间段报表</option>
+                    </select>
+                </div>
+                <div id="date_input_div">
+                    <label style="display: block; margin-bottom: 5px;">日期：</label>
+                    <input type="text" name="date_input" class="form-control" placeholder="YYYY-MM-DD" style="width: 100%;" id="date_input">
+                </div>
+                <div id="start_date_div" style="display: none;">
+                    <label style="display: block; margin-bottom: 5px;">起始日期：</label>
+                    <input type="date" name="start_date" class="form-control" style="width: 100%;" id="start_date">
+                </div>
+                <div id="end_date_div" style="display: none;">
+                    <label style="display: block; margin-bottom: 5px;">结束日期：</label>
+                    <input type="date" name="end_date" class="form-control" style="width: 100%;" id="end_date">
+                </div>
+            </div>
+            <div>
+                <button type="submit" name="generate" class="btn btn-primary">生成报表</button>
+                <button type="button" class="btn btn-success" style="margin-left: 10px;">导出报表</button>
+                <button type="button" class="btn" style="margin-left: 10px;">打印报表</button>
+            </div>
+        </form>
     </div>
 
-    <div>
-        <h3>2025年12月设备使用统计报表（负责人视角）</h3>
+    <div style="margin-bottom: 30px;">
+        <h3>📋 历史报表列表</h3>
+        {% if reports %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th>报表类型</th>
+                        <th>报表名称</th>
+                        <th>统计时间</th>
+                        <th>总收入（元）</th>
+                        <th>生成方式</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in reports %}
+                    <tr>
+                        <td>{{ report.get_report_type_display }}</td>
+                        <td>{{ report.report_name }}</td>
+                        <td>{{ report.start_date|date:"Y-m-d" }} 至 {{ report.end_date|date:"Y-m-d" }}</td>
+                        <td>{{ report.total_revenue }}</td>
+                        <td>{{ report.generated_by.username|default:"系统自动" }}</td>
+                        <td>
+                            <a href="?view={{ report.id }}" class="btn btn-info btn-sm">查看详情</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+
+    <hr>
+
+    {% if current_report %}
+    <div id="report_detail">
+        <h3>{{ current_report.report_name }}（负责人视角）</h3>
+        
         <div style="display: flex; gap: 20px; margin: 20px 0;">
-            <div style="width: 400px; height: 300px; background-color: #f5f5f5; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center;">
-                设备采购/报废趋势图（演示）
+            <div style="flex: 1; height: 300px; background-color: #f5f5f5; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center;">
+                <strong>设备采购/报废趋势图（基于当前数据渲染）</strong>
             </div>
-            <div style="width: 400px; height: 300px; background-color: #f5f5f5; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center;">
-                校外人员收费统计饼图（演示）
+            <div style="flex: 1; height: 300px; background-color: #f5f5f5; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center;">
+                <strong>校外人员收费统计饼图（￥{{ current_report.total_revenue }}）</strong>
             </div>
         </div>
 
-        <table>
+        {% with data=current_report.get_report_data %}
+        <table class="table">
             <thead>
-                <tr>
+                <tr style="background-color: #f8f9fa;">
                     <th>设备编号</th>
-                    <th>设备名称</th>
+                    <th>设备型号</th>
                     <th>总预约次数</th>
-                    <th>校外收费金额（元）</th>
-                    <th>是否需采购补充</th>
+                    <th>校外收费（元）</th>
+                    <th>使用率</th>
+                    <th style="color: #e67e22;">负责人决策：是否需采购补充</th>
                 </tr>
             </thead>
             <tbody>
+                {% for device in data.device_usage %}
                 <tr>
-                    <td>DEV001</td>
-                    <td>型号A-100 物理实验设备</td>
-                    <td>25</td>
-                    <td>0</td>
-                    <td>否</td>
+                    <td>{{ device.device_code }}</td>
+                    <td>{{ device.device_model }}</td>
+                    <td>{{ device.booking_count }}</td>
+                    <td>{{ device.revenue }}</td>
+                    <td>{{ device.usage_rate }}%</td>
+                    <td>
+                        {% if device.usage_rate > 80 %}
+                            <span style="color: red;">是（建议增购）</span>
+                        {% else %}
+                            <span>否</span>
+                        {% endif %}
+                    </td>
                 </tr>
-                <tr>
-                    <td>DEV002</td>
-                    <td>型号B-200 化学实验设备</td>
-                    <td>18</td>
-                    <td>450</td>
-                    <td>是（建议采购2台）</td>
-                </tr>
+                {% endfor %}
             </tbody>
         </table>
+        {% endwith %}
     </div>
-    <script>
-        function changeReportType(type) {
-            alert(`已切换为${type === 'week' ? '周' : type === 'month' ? '月' : '年'}报表（负责人视角）`);
-        }
-    </script>
+    {% endif %}
 </div>
+
+<script>
+    // 保留他人增加的动态表单 JS 逻辑
+    document.getElementById('report_type_select').addEventListener('change', function() {
+        const type = this.value;
+        const dateInputDiv = document.getElementById('date_input_div');
+        const startDateDiv = document.getElementById('start_date_div');
+        const endDateDiv = document.getElementById('end_date_div');
+        const dateInput = document.getElementById('date_input');
+        
+        if (type === 'custom') {
+            dateInputDiv.style.display = 'none';
+            startDateDiv.style.display = 'block';
+            endDateDiv.style.display = 'block';
+            dateInput.required = false;
+        } else {
+            dateInputDiv.style.display = 'block';
+            startDateDiv.style.display = 'none';
+            endDateDiv.style.display = 'none';
+            dateInput.required = true;
+            if (type === 'month') dateInput.placeholder = "YYYY-MM";
+            else if (type === 'year') dateInput.placeholder = "YYYY";
+            else dateInput.placeholder = "YYYY-MM-DD";
+        }
+    });
+</script>
 {% endblock %}
