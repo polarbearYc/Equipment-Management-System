@@ -23,10 +23,20 @@ from django.db.models import Count, Sum, Q, Avg
 from django.http import JsonResponse, HttpResponse
 import json
 from decimal import Decimal
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
+from openpyxl.utils import get_column_letter
 
 
 def admin_home(request):
-    return render(request, 'admin/home.html')
+    """管理员首页"""
+    is_admin = request.user.groups.filter(name='设备管理员').exists()
+    is_manager = request.user.groups.filter(name='实验室负责人').exists()
+    context = {
+        'is_admin': is_admin,
+        'is_manager': is_manager,
+    }
+    return render(request, 'admin/home.html', context)
 
 def device_list(request):
     """
@@ -270,13 +280,131 @@ def report_stat(request):
         except Report.DoesNotExist:
             messages.error(request, '报表不存在！')
     
+    # 获取用户角色信息
+    is_admin = request.user.groups.filter(name='设备管理员').exists()
+    is_manager = request.user.groups.filter(name='实验室负责人').exists()
+    
     context = {
         'reports': reports,
         'current_report': current_report,
         'report_type_filter': report_type_filter,
         'date_filter': date_filter,
+        'is_admin': is_admin,
+        'is_manager': is_manager,
     }
     return render(request, 'admin/report_stat.html', context)
+
+@login_required
+def export_report_csv(request, report_id):
+    """导出报表为Excel文件（.xlsx）"""
+    from django.http import HttpResponse
+    from .models import Report
+    import re
+    
+    report = get_object_or_404(Report, id=report_id)
+    data = report.get_report_data()
+    
+    # 创建Excel工作簿
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "报表"
+    
+    # 写入报表基本信息
+    # 转换datetime为naive datetime（移除时区信息）
+    generated_at = report.generated_at.replace(tzinfo=None) if report.generated_at else None
+    
+    ws.append(['报表名称', report.report_name])
+    ws.append(['报表类型', report.get_report_type_display()])
+    ws.append(['统计时间', f'{report.start_date.strftime("%Y-%m-%d")} 至 {report.end_date.strftime("%Y-%m-%d")}'])
+    ws.append(['生成时间', generated_at])
+    ws.append(['生成人', report.generated_by.username if report.generated_by else '系统自动'])
+    ws.append([])  # 空行
+    
+    # 设置生成时间为日期格式
+    if generated_at:
+        ws.cell(row=4, column=2).number_format = 'yyyy-mm-dd hh:mm:ss'
+    
+    # 写入汇总统计
+    ws.append(['汇总统计'])
+    ws.append(['总预约次数', data['summary']['total_bookings']])
+    ws.append(['已审批通过', data['summary']['approved_count']])
+    ws.append(['总收入（元）', data['summary']['total_revenue']])
+    ws.append(['设备总数', data['summary']['total_devices']])
+    ws.append(['用户总数', data['summary']['total_users']])
+    ws.append([])  # 空行
+    
+    # 写入设备使用统计
+    ws.append(['设备使用统计'])
+    headers = ['设备编号', '设备型号', '预约次数', '使用时长（小时）', '使用率（%）', '校外收费（元）']
+    ws.append(headers)
+    
+    # 设置表头样式
+    header_row = ws.max_row
+    header_font = Font(bold=True)
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=header_row, column=col)
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    
+    for device in data.get('device_usage', []):
+        ws.append([
+            device['device_code'],
+            device['device_model'],
+            device['booking_count'],
+            device['usage_hours'],
+            f"{device['usage_rate']}%",
+            device['revenue']
+        ])
+    ws.append([])  # 空行
+    
+    # 写入用户类型统计
+    ws.append(['用户类型统计'])
+    headers = ['用户类型', '预约次数', '用户数量']
+    ws.append(headers)
+    
+    # 设置表头样式
+    header_row = ws.max_row
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=header_row, column=col)
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    
+    for stat in data.get('user_type_stats', []):
+        user_type = stat.get('applicant__user_type', '')
+        user_type_display = {
+            'student': '校内学生',
+            'teacher': '校内教师',
+            'external': '校外人员'
+        }.get(user_type, user_type)
+        ws.append([
+            user_type_display,
+            stat['booking_count'],
+            stat['user_count']
+        ])
+    
+    # 自动调整列宽
+    for column in ws.columns:
+        max_length = 0
+        column_letter = get_column_letter(column[0].column)
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = min(max_length + 2, 50)
+        ws.column_dimensions[column_letter].width = adjusted_width
+    
+    # 创建响应
+    # 清理文件名中的特殊字符
+    safe_filename = re.sub(r'[<>:"/\\|?*]', '_', report.report_name)
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="report_{report.id}_{safe_filename}.xlsx"'
+    
+    wb.save(response)
+    return response
 
 # 1. 管理员审批页面
 @login_required

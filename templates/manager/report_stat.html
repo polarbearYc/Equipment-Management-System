@@ -6,6 +6,7 @@
 <div class="sidebar">
     <a href="{% url 'manager_home' %}">首页</a>
     <a href="{% url 'manager_booking_approve' %}">校外人员预约审批</a>
+    <a href="{% url 'device_manage' %}">设备管理</a>
     <a href="{% url 'user_manage' %}">用户管理</a>
     <a href="{% url 'ledger:ledger_home' %}">台账</a>
     <a href="{% url 'manager_report_stat' %}" class="active">报表统计</a>
@@ -112,8 +113,11 @@
                             {% endif %}
                         </td>
                         <td>{{ report.generated_by.username|default:"系统自动" }}</td>
-                        <td>
-                            <a href="?view={{ report.id }}" class="btn btn-info" style="white-space: nowrap;">查看详情</a>
+                        <td style="min-width: 150px;">
+                            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                                <a href="?view={{ report.id }}" class="btn btn-info" style="white-space: nowrap; flex-shrink: 0;">查看详情</a>
+                                <a href="{% url 'manager_export_report_csv' report_id=report.id %}" class="btn btn-success" style="white-space: nowrap; flex-shrink: 0;">导出</a>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -128,7 +132,10 @@
     <!-- 报表详情展示 -->
     {% if current_report %}
     <div style="margin-top: 30px; padding: 20px; background-color: #f9f9f9; border-radius: 5px;">
-        <h3>{{ current_report.report_name }}</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+            <h3 style="margin: 0; flex: 1; min-width: 200px;">{{ current_report.report_name }}</h3>
+            <a href="{% url 'manager_export_report_csv' report_id=current_report.id %}" class="btn btn-success" style="white-space: nowrap; flex-shrink: 0;">📥 导出报表</a>
+        </div>
         <p style="color: #666; margin-bottom: 20px;">
             统计时间：{{ current_report.start_date|date:"Y年m月d日" }} 至 {{ current_report.end_date|date:"Y年m月d日" }} | 
             生成时间：{{ current_report.generated_at|date:"Y-m-d H:i" }}
